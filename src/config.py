@@ -4,6 +4,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+#agregar carpetas si aun no existen
+
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
 INTERIM = ROOT / "data" / "interim"
