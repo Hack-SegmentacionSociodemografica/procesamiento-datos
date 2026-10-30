@@ -10,6 +10,8 @@ TABLAS = {
     "base_limpia": "base_limpia.parquet",
     "base_municipio": "base_municipio.parquet",
     "catalogo_territorial": "catalogo_territorial.parquet",
+    "voto_anticipado_municipio": "voto_anticipado_municipio.parquet",
+    "prision_preventiva_distrito": "prision_preventiva_distrito.parquet",
 }
 
 

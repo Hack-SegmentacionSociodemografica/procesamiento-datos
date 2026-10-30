@@ -1,6 +1,5 @@
 """Paso 1. Lee los CSV de los 32 estados de cada año (desde el zip o sueltos) y guarda
-un parquet por archivo en data/interim/<año>/. Todo se procesa archivo por archivo
-para no llenar la memoria."""
+un parquet por archivo en data/interim/<año>/. Todo se procesa archivo por archivo."""
 import sys
 import zipfile
 from pathlib import Path
