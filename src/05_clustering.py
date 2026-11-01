@@ -211,39 +211,8 @@ def asignar_y_caracterizar_perfiles(df_features, X_scaled, weights, k_optimo=5):
     # Exportar caracterización
     agrup.to_csv(CLUSTERING_REPORTS / "caracterizacion_perfiles.csv", index=False)
 
-    # 1. Gráfica de Radar / Barras de Centroides
-    fig, ax = plt.subplots(figsize=(11, 6))
-    bar_width = 0.15
-    metricas = ["part_media", "part_volatilidad", "brecha_pres_inter", "tendencia_2009_2024"]
-    etiquetas_metricas = ["Part. Media", "Volatilidad", "Brecha Pres. vs Inter.", "Tendencia (2009->2024)"]
-    x = np.arange(len(metricas))
-
-    for idx, row in agrup.iterrows():
-        valores = [row[m] for m in metricas]
-        ax.bar(x + idx * bar_width, valores, width=bar_width, label=f"{row['perfil_cve']}: {row['perfil_nombre'][:30]}...")
-
-    ax.set_xticks(x + bar_width * 2)
-    ax.set_xticklabels(etiquetas_metricas, fontweight="bold")
-    ax.set_ylabel("Valor Promedio Ponderado")
-    ax.set_title(f"Centroides de Comportamiento Electoral por Perfil Ciudadano (k={k_optimo})", fontsize=12, fontweight="bold")
-    ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1), frameon=True)
-    plt.tight_layout()
-    plt.savefig(CLUSTERING_REPORTS / "centroides_perfiles.png", dpi=200)
-    plt.close()
-
-    # 2. Composición por Grupo de Edad
-    edad_comp = df_res.groupby(["perfil_cve", "grupo_edad"])["ln_promedio"].sum().unstack("grupo_edad")
-    edad_comp_pct = edad_comp.div(edad_comp.sum(axis=1), axis=0) * 100
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    edad_comp_pct.plot(kind="bar", stacked=True, ax=ax, colormap="viridis")
-    ax.set_title("Composición por Grupos de Edad en cada Perfil Ciudadano (%)", fontweight="bold")
-    ax.set_xlabel("Perfil Ciudadano")
-    ax.set_ylabel("Porcentaje de la Lista Nominal")
-    ax.legend(title="Grupo de Edad", bbox_to_anchor=(1.02, 1), loc="upper left")
-    plt.tight_layout()
-    plt.savefig(CLUSTERING_REPORTS / "composicion_edad_perfiles.png", dpi=200)
-    plt.close()
+    # Generar todos los gráficos analíticos
+    generar_visualizaciones_analiticas(df_res, agrup, k_optimo)
 
     # 3. Resumen a nivel MUNICIPIO (Para Power BI y Cartografía)
     # Identifica el perfil dominante de cada municipio (mayor lista nominal)
@@ -282,6 +251,207 @@ def asignar_y_caracterizar_perfiles(df_features, X_scaled, weights, k_optimo=5):
     print(f" - Gráficas y caracterización en {CLUSTERING_REPORTS}")
 
     return df_res, resumen_municipio
+
+
+def generar_visualizaciones_analiticas(df_res, agrup, k_optimo):
+    """Genera el conjunto completo de gráficas para el informe y la presentación del INE."""
+    colores_perfiles = {
+        "P1": "#D9534F",  # Rojo suave / Abstencionismo
+        "P2": "#F39C12",  # Naranja / Coyuntural
+        "P3": "#7F8C8D",  # Gris azulado / Moderado
+        "P4": "#2980B9",  # Azul institucional / Ascenso
+        "P5": "#27AE60",  # Verde / Alta fidelidad
+    }
+    anios = [2009, 2012, 2015, 2018, 2021, 2024]
+    presidenciales = [2012, 2018, 2024]
+
+    # ==============================================================
+    # 1. PARTICIPACIÓN MEDIA POR PERFIL (Barras Horizontales con datos)
+    # ==============================================================
+    fig, ax = plt.subplots(figsize=(10, 5))
+    agrup_sorted = agrup.sort_values("part_media", ascending=True)
+    bars = ax.barh(
+        agrup_sorted["perfil_cve"],
+        agrup_sorted["part_media"] * 100,
+        color=[colores_perfiles.get(p, "#333333") for p in agrup_sorted["perfil_cve"]],
+        height=0.6,
+        edgecolor="none",
+    )
+    ax.set_xlim(0, 85)
+    ax.set_xlabel("Tasa de Participación Media Histórica (%)", fontweight="bold")
+    ax.set_title("Participación Media por Perfil Ciudadano (Elecciones 2009-2024)", fontsize=13, fontweight="bold", pad=12)
+
+    for bar, (_, row) in zip(bars, agrup_sorted.iterrows()):
+        w = bar.get_width()
+        millones = row["total_poblacion_ln"] / 1e6
+        pct_padron = row["pct_poblacion"] * 100
+        ax.text(
+            w + 1.2,
+            bar.get_y() + bar.get_height() / 2,
+            f"{w:.1f}%  ({row['perfil_nombre'].split(': ')[1]} | {pct_padron:.1f}% padrón, {millones:.1f}M electores)",
+            va="center",
+            fontsize=9.5,
+            fontweight="bold",
+        )
+    ax.axvline(56.3, color="#555555", linestyle="--", alpha=0.7, label="Media Nacional Histórica (56.3%)")
+    ax.legend(loc="lower right")
+    plt.tight_layout()
+    plt.savefig(CLUSTERING_REPORTS / "participacion_media_por_perfil.png", dpi=250)
+    plt.close()
+    print(" - Gráfico guardado: participacion_media_por_perfil.png")
+
+    # ==============================================================
+    # 2. PARTICIPACIÓN POR AÑO PARA CADA PERFIL (Serie de Tiempo 2009-2024)
+    # ==============================================================
+    fig, ax = plt.subplots(figsize=(11, 6))
+
+    # Calcular participación ponderada por año para cada cluster
+    cols_anios = [f"part_{a}" for a in anios]
+    for p in agrup["perfil_cve"]:
+        sub = df_res[df_res["perfil_cve"] == p]
+        tasas_anios = []
+        for col in cols_anios:
+            tasa_ponderada = np.average(sub[col], weights=sub["ln_promedio"]) * 100
+            tasas_anios.append(tasa_ponderada)
+
+        nom_corto = agrup.loc[agrup["perfil_cve"] == p, "perfil_nombre"].values[0]
+        ax.plot(
+            anios,
+            tasas_anios,
+            marker="o",
+            lw=2.8,
+            markersize=7,
+            label=f"{nom_corto}",
+            color=colores_perfiles.get(p, "#333"),
+        )
+        # Anotar valor en 2024
+        ax.text(2024.1, tasas_anios[-1], f"{tasas_anios[-1]:.1f}%", va="center", fontsize=8.5, fontweight="bold", color=colores_perfiles.get(p, "#333"))
+
+    # Sombrear elecciones presidenciales
+    for pres in presidenciales:
+        ax.axvspan(pres - 0.35, pres + 0.35, color="#EBF5FB", alpha=0.8, zorder=0)
+        ax.text(pres, 22, "Presidencial", ha="center", fontsize=8, color="#2980B9", style="italic")
+
+    ax.set_xticks(anios)
+    ax.set_ylim(20, 85)
+    ax.set_xlim(2008.5, 2025.2)
+    ax.set_ylabel("Tasa de Participación (%)", fontweight="bold")
+    ax.set_xlabel("Año de la Elección Federal", fontweight="bold")
+    ax.set_title("Evolución de la Participación Electoral por Perfil (2009 - 2024)", fontsize=13, fontweight="bold", pad=12)
+    ax.legend(loc="upper left", frameon=True)
+    plt.tight_layout()
+    plt.savefig(CLUSTERING_REPORTS / "participacion_por_anio_perfiles.png", dpi=250)
+    plt.close()
+    print(" - Gráfico guardado: participacion_por_anio_perfiles.png")
+
+    # ==============================================================
+    # 3. COMPOSICIÓN POR SEXO Y EDAD DE CADA PERFIL
+    # ==============================================================
+    fig, axes = plt.subplots(1, 5, figsize=(18, 5), sharey=True)
+    grupos_edad = ["18-19", "20-24", "25-29", "30-39", "40-49", "50-59", "60-69", "70+"]
+
+    for idx, p in enumerate(agrup["perfil_cve"]):
+        ax = axes[idx]
+        sub = df_res[df_res["perfil_cve"] == p]
+        tot_p = sub["ln_promedio"].sum()
+
+        hombres = [
+            (sub[(sub["grupo_edad"] == e) & (sub["sexo"] == 0)]["ln_promedio"].sum() / tot_p) * 100
+            for e in grupos_edad
+        ]
+        mujeres = [
+            (sub[(sub["grupo_edad"] == e) & (sub["sexo"] == 1)]["ln_promedio"].sum() / tot_p) * 100
+            for e in grupos_edad
+        ]
+
+        y = np.arange(len(grupos_edad))
+        bar_h = 0.38
+        ax.barh(y - bar_h/2, hombres, height=bar_h, label="Hombres", color="#5DADE2", edgecolor="none")
+        ax.barh(y + bar_h/2, mujeres, height=bar_h, label="Mujeres", color="#AF7AC5", edgecolor="none")
+
+        ax.set_yticks(y)
+        ax.set_yticklabels(grupos_edad, fontsize=9)
+        nom_linea = agrup.loc[agrup["perfil_cve"] == p, "perfil_nombre"].values[0].replace(": ", ":\n")
+        ax.set_title(f"{nom_linea}", fontsize=10, fontweight="bold", pad=8)
+        ax.set_xlabel("% del Perfil", fontsize=9)
+        ax.grid(axis="x", linestyle=":", alpha=0.6)
+        if idx == 0:
+            ax.set_ylabel("Grupo de Edad", fontweight="bold")
+            ax.legend(loc="lower right", fontsize=8.5)
+
+    fig.suptitle("Composición Cruzada por Sexo y Grupo de Edad en Cada Perfil Ciudadano", fontsize=14, fontweight="bold", y=1.03)
+    plt.tight_layout()
+    plt.savefig(CLUSTERING_REPORTS / "composicion_sexo_edad_perfiles.png", dpi=250)
+    plt.close()
+    print(" - Gráfico guardado: composicion_sexo_edad_perfiles.png")
+
+    # ==============================================================
+    # 4. VALOR AGREGADO: BRECHA PRESIDENCIAL VS INTERMEDIA (Dumbbell Plot)
+    # ==============================================================
+    fig, ax = plt.subplots(figsize=(10, 5))
+    y_pos = np.arange(len(agrup))
+
+    for idx, row in agrup.iterrows():
+        p = row["perfil_cve"]
+        sub = df_res[df_res["perfil_cve"] == p]
+        inter = np.average(sub["part_intermedia"], weights=sub["ln_promedio"]) * 100
+        pres = np.average(sub["part_presidencial"], weights=sub["ln_promedio"]) * 100
+
+        # Línea de unión
+        ax.plot([inter, pres], [idx, idx], color="#95A5A6", lw=3, zorder=1)
+        # Punto intermedias
+        ax.scatter(inter, idx, color="#E74C3C", s=110, zorder=2, label="Intermedias (Diputados)" if idx == 0 else "")
+        # Punto presidenciales
+        ax.scatter(pres, idx, color="#2ECC71", s=110, zorder=2, label="Presidenciales" if idx == 0 else "")
+
+        # Texto de brecha
+        brecha = pres - inter
+        ax.text((inter + pres)/2, idx + 0.18, f"+{brecha:.1f}%", ha="center", fontsize=9, fontweight="bold", color="#2C3E50")
+
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels([f"{row['perfil_cve']}: {row['perfil_nombre'].split(': ')[1]}" for _, row in agrup.iterrows()], fontweight="bold")
+    ax.set_xlabel("Tasa de Participación Ponderada (%)", fontweight="bold")
+    ax.set_title("Efecto de la Convocatoria Presidencial: Brecha entre Presidenciales e Intermedias", fontsize=12, fontweight="bold", pad=12)
+    ax.legend(loc="lower right", frameon=True)
+    plt.tight_layout()
+    plt.savefig(CLUSTERING_REPORTS / "brecha_presidencial_dumbbell.png", dpi=250)
+    plt.close()
+    print(" - Gráfico guardado: brecha_presidencial_dumbbell.png")
+
+    # ==============================================================
+    # 5. VALOR AGREGADO: CONCENTRACIÓN REGIONAL POR PERFIL
+    # ==============================================================
+    # Mapeo de Entidades a 4 Macro-Regiones del INE
+    regiones_map = {
+        "02": "Norte", "03": "Norte", "05": "Norte", "08": "Norte", "10": "Norte", "19": "Norte", "26": "Norte", "28": "Norte",
+        "01": "Occidente/Bajío", "06": "Occidente/Bajío", "11": "Occidente/Bajío", "14": "Occidente/Bajío", "16": "Occidente/Bajío", "18": "Occidente/Bajío", "22": "Occidente/Bajío", "24": "Occidente/Bajío", "32": "Occidente/Bajío",
+        "09": "Centro", "13": "Centro", "15": "Centro", "17": "Centro", "21": "Centro", "29": "Centro",
+        "04": "Sur-Sureste", "07": "Sur-Sureste", "12": "Sur-Sureste", "20": "Sur-Sureste", "23": "Sur-Sureste", "27": "Sur-Sureste", "30": "Sur-Sureste", "31": "Sur-Sureste"
+    }
+    df_res["region"] = df_res["entidad_cve"].map(regiones_map).fillna("Otra")
+
+    reg_pivot = df_res.groupby(["region", "perfil_cve"])["ln_promedio"].sum().unstack("perfil_cve")
+    reg_pct = reg_pivot.div(reg_pivot.sum(axis=1), axis=0) * 100
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    reg_pct.plot(
+        kind="bar",
+        stacked=True,
+        ax=ax,
+        color=[colores_perfiles.get(c, "#777") for c in reg_pct.columns],
+        edgecolor="white",
+        width=0.6,
+    )
+    ax.set_title("Mezcla de Perfiles Ciudadanos por Macro-Región Electoral (%)", fontsize=12, fontweight="bold", pad=12)
+    ax.set_xlabel("Macro-Región", fontweight="bold")
+    ax.set_ylabel("Porcentaje de la Lista Nominal", fontweight="bold")
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=0, fontweight="bold")
+    ax.legend(title="Perfil", bbox_to_anchor=(1.02, 1), loc="upper left", labels=[f"{c}: {agrup.set_index('perfil_cve')['perfil_nombre'].to_dict().get(c).split(': ')[1]}" for c in reg_pct.columns])
+    plt.tight_layout()
+    plt.savefig(CLUSTERING_REPORTS / "distribucion_regional_perfiles.png", dpi=250)
+    plt.close()
+    print(" - Gráfico guardado: distribucion_regional_perfiles.png")
+
 
 
 def main():
