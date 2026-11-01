@@ -1,5 +1,74 @@
-data/raw
-data/clean
-data/interim
+# ==========================================
+# Entornos Virtuales
+# ==========================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ==========================================
+# Bytecode y Caché de Python
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# ==========================================
+# Credenciales y Secretos
+# ==========================================
 .env
-.venv
+.env.*
+!.env.example
+*.pem
+*.key
+*credential*.json
+*service_account*.json
+*client_secret*.json
+gcp_*.json
+token.json
+
+# ==========================================
+# Almacenamiento de Datos y Archivos Pesados
+# ==========================================
+data/raw/
+data/interim/
+data/clean/
+data/processed/
+!data/.gitkeep
+
+# Extensiones pesadas de datos en cualquier ubicación de data
+data/**/*.parquet
+data/**/*.zip
+data/**/*.csv
+data/**/*.tar.gz
+data/**/*.7z
+
+# Modelos serializados pesados
+*.pkl
+*.pickle
+*.joblib
+*.h5
+
+# ==========================================
+# Sistema Operativo y Editores
+# ==========================================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ==========================================
+# Archivos Temporales de Office / Power BI
+# ==========================================
+~$*
+*.tmp
